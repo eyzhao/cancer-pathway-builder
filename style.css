@@ -1,0 +1,35 @@
+@media print {
+    .details {
+        padding-top: 2cm;
+        padding-bottom: 2cm; 
+        padding-right: 2cm 
+    }
+}
+
+body {
+    margin: 0px;
+    font-family: lato;
+}
+
+#container {
+  display: grid;
+  grid-template-columns: 800px 200px 500px;
+  grid-template-rows: 1000px;
+  column-gap: 20px;
+  grid-template-areas:
+    "workspace panel sliders"
+}
+
+#workspace {
+  grid-area: workspace;
+}
+
+#panel {
+  grid-area: panel;
+  background-color: #F8F8F8;
+}
+
+#sliders {
+  grid-area: sliders;
+}
+
