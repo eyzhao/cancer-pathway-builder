@@ -33,3 +33,6 @@ body {
   grid-area: sliders;
 }
 
+.mutation_label {
+  font-style: italic;
+}
