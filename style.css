@@ -13,20 +13,15 @@ body {
 
 #container {
   display: grid;
-  grid-template-columns: 800px 200px 500px;
-  grid-template-rows: 1000px;
+  grid-template-columns: 1260px 500px;
+  grid-template-rows: 1500px;
   column-gap: 20px;
   grid-template-areas:
-    "workspace panel sliders"
+    "workspace sliders"
 }
 
 #workspace {
   grid-area: workspace;
-}
-
-#panel {
-  grid-area: panel;
-  background-color: #F8F8F8;
 }
 
 #sliders {

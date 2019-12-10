@@ -1,24 +1,25 @@
-const svg_height = 1000,
-      svg_width = 1000,
+const svg_height = 1500,
+      svg_width = 1250,
       grid_point_radius = 0.5,
       gene_radius = 6,
       gene_group_width = 30,
       gene_group_radius = gene_group_width/2,
       gene_text_offset = 14,
       gene_text_size = '14px',
-      gene_panel_arrow_top_padding = 100,
+      gene_panel_arrow_top_padding = 180,
       gene_panel_arrow_size = 20,
-      gene_panel_capacity = 28,
+      gene_panel_capacity = 26,
       gene_panel_left_padding = 80,
       gene_panel_spacing = 100,
-      gene_panel_top_padding = 180,
+      gene_panel_top_padding = 260,
       gene_panel_color = '#F8F8F8',
       gene_panel_width = 250,
+      fusion_symbol_height = 20,
       active_width = svg_width - gene_panel_width,
-      grid_size = 40,
+      grid_size = 30,
       grid_offset = grid_size/2,
-      node_mode_switch_coordinates = [800, 40],
-      edge_mode_switch_coordinates = [800, 60],
+      node_mode_switch_coordinates = [active_width + 50, 40],
+      edge_mode_switch_coordinates = [active_width + 50, 60],
       arrow_length = 10,
       switch_radius = 8
       switch_off_color = '#BBBBBB'
@@ -49,7 +50,16 @@ const svg_height = 1000,
 class Diagram {
   constructor() {
     this.initialize_variables();
+    this.load_annotation_data();
     this.load_all_genes();
+  }
+
+  reconstruct_from_file(load_data) {
+    this.load_variables_from_file(load_data);
+    this.load_annotation_data();
+    this.load_all_genes();
+    redraw_active_genes(this);
+    apply_edge_events(this);
   }
 
   load_all_genes() {
@@ -57,10 +67,57 @@ class Diagram {
       var genes = gene_data.map(row => row.genename)
       this.genes.all = genes
     })
+
+    var fusion_label = d3.select('#interface_layer').append('text')
+      .attr('x', active_width + gene_panel_left_padding)
+      .attr('y', 120 + gene_group_radius - gene_text_offset)
+      .attr('text-anchor', 'middle')
+      .text('Fusion')
+      .style('font-size', gene_text_size)
+
+    var complex_label = d3.select('#interface_layer').append('text')
+      .attr('x', active_width + gene_panel_left_padding + gene_panel_spacing)
+      .attr('y', 120 + gene_group_radius - gene_text_offset)
+      .attr('text-anchor', 'middle')
+      .text('Complex')
+      .style('font-size', gene_text_size)
+
+    draw_fusion(this, [active_width + gene_panel_left_padding, 140])
+    draw_fusion(this, [active_width + gene_panel_left_padding, 140])
+    draw_complex(this, [active_width + gene_panel_left_padding + gene_panel_spacing, 140])
+    draw_complex(this, [active_width + gene_panel_left_padding + gene_panel_spacing, 140])
+  }
+
+  load_variables_from_file(load_data) {
+    console.log('LOAD DATA')
+    console.log(load_data)
+    this.svg.select('#gene_layer').remove()
+    this.svg.select('#edge_layer').remove()
+    d3.select('#svg-workspace').append('g').attr('id', 'edge_layer').html(load_data.view_layers.edge_layer)
+    d3.select('#svg-workspace').append('g').attr('id', 'gene_layer').html(load_data.view_layers.gene_layer)
+    this.svg = d3.select('#svg-workspace')
+    this.current_selection = null;
+    this.genes = {
+      active: new Set(load_data.genes.active),
+      panel_range: [0, gene_panel_capacity],
+      panel: [],
+      search: null,
+      all: []
+    }
+    this.mode = null
+    this.view_layers = load_data.view_layers
+    this.data_layers = load_data.data_layers
+    this.data = {
+      paths: load_data.data.paths
+    }
+    this.options = load_data.options
+    this.feature = {
+      search: null
+    }
+    console.log(this)
   }
 
   initialize_variables() {
-    console.log('initializing')
     this.svg = this.initialize_workspace();
     this.current_selection = null;
     this.genes = {
@@ -74,10 +131,11 @@ class Diagram {
     this.view_layers = {}
     this.data_layers = []
     this.data = {
-      expression: {
-        foldchange: {}
-      },
-      mutation: {}
+      paths: {
+        mutation: 'data/example_mutations.maf',
+        expression_foldchange: 'data/example_gtex_comparison.tsv',
+        copynumber: 'data/example_cna.tsv'
+      }
     };
     this.options = {
       expression_clipping_value: 3
@@ -85,19 +143,28 @@ class Diagram {
     this.feature = {
       search: null
     }
-    console.log('done initializing')
 
     this.view_layers.grid_layer = this.initialize_grid_layer()
-    this.view_layers.edge_layer = this.initialize_edge_layer()
-    this.view_layers.gene_layer = this.initialize_gene_layer()
     this.view_layers.gene_panel = this.initialize_gene_panel()
     this.view_layers.interface_layer = this.initialize_interface_layer()
+    this.view_layers.edge_layer = this.initialize_edge_layer()
+    this.view_layers.gene_layer = this.initialize_gene_layer()
+  }
 
-    this.add_expression_foldchange_layer('data/example_gtex_comparison.tsv')
-      .then(this.add_mutation_layer('data/example_mutations.maf'))
-      .then(this.add_copynumber_layer('data/example_cna.tsv'))
-      .then(this.load_cosmic_census_genes('data/reference/cosmic_census_genes.txt'))
-      .then(() => {console.log(this.data.expression); refresh_gene_panel(this)})
+  load_annotation_data() {
+    this.load_data_object(this.data.paths)
+      .then(() => {
+      return Promise.all([
+        this.add_expression_foldchange_layer(),
+        this.add_mutation_layer(),
+        this.add_copynumber_layer(),
+        this.load_cosmic_census_genes('data/reference/cosmic_census_genes.txt')
+      ])
+    })
+      .then(() => {
+        console.log(this.data.expression_foldchange);
+        refresh_gene_panel(this)
+      })
   }
 
   initialize_workspace() {
@@ -105,7 +172,9 @@ class Diagram {
       .append('svg')
       .attr('id', 'svg-workspace')
       .attr('width', svg_height)
-      .attr('height', svg_width);
+      .attr('height', svg_width)
+      .attr('viewBox', `0 0 ${svg_width} ${svg_height}`)
+      .attr('xmlns', 'http://www.w3.org/2000/svg')
 
     var defs = svg.append('defs')
     defs.append('marker')
@@ -134,6 +203,76 @@ class Diagram {
 
     return(svg)
   }
+
+  save_svg(embed = false) {
+    var fileName = 'pathway_data.json';
+
+    var svg_copy = this.get_svg_copy()
+    console.log(this.genes.active)
+    var save_data = {
+      'data': {
+        'paths': this.data.paths
+      },
+      'data_layers': this.data_layers,
+      'genes': {
+        'active': [...this.genes.active]
+      },
+      'options': this.options,
+      'view_layers': {
+        'gene_layer': svg_copy.select('#gene_layer').node().innerHTML,
+        'edge_layer': svg_copy.select('#edge_layer').node().innerHTML
+      }
+    }
+    console.log(save_data)
+
+    // Create a blob of the data
+    var fileToSave = new Blob([JSON.stringify(save_data)], {
+        type: 'application/json',
+        name: fileName
+    });
+
+    // Save the file
+    saveAs(fileToSave, fileName);
+  }
+
+  load_pathway(file_data) {
+    var save_data = JSON.parse(file_data)
+    this.reconstruct_from_file(save_data)
+  }
+
+  get_svg_copy() {
+    var content = d3.select('#workspace').html();
+    var div = d3.select('#hidden')
+        .html(content);
+    var svg_copy = d3.select('#hidden').select('svg')
+    svg_copy.select('#grid_layer').remove()
+    svg_copy.select('#interface_layer').remove()
+    svg_copy.select('#gene_panel').remove()
+    svg_copy.selectAll('.gene_group_inactive').remove()
+    svg_copy.selectAll('.gene_group_panel').remove()
+    svg_copy.selectAll('.fusion_group').remove()
+    svg_copy.selectAll('.complex_group').remove()
+    return(svg_copy)
+  }
+
+  clear_svg_copy() {
+    d3.select('#hidden').select('svg').remove()
+  }
+
+  export_svg() {
+    var svg_copy = this.get_svg_copy()
+    var svgData = '<?xml version="1.0" standalone="no"?>\n<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">\n'.concat(svg_copy.node().outerHTML);
+    var svgBlob = new Blob([svgData], {type:"image/svg+xml;charset=utf-8"});
+    var svgUrl = URL.createObjectURL(svgBlob);
+    var downloadLink = document.createElement("a");
+    downloadLink.href = svgUrl;
+    downloadLink.download = "pathway.svg";
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    document.body.removeChild(downloadLink);
+    clear_svg_copy()
+  }
+
 
   initialize_grid_layer() {
     var grid_layer = this.svg.append('g')
@@ -244,6 +383,14 @@ class Diagram {
     this.current_selection.deselector(this)
 	}
 
+  load_data_object(data_object) {
+    // Loads an object with paths to data
+    return new Promise((resolve, reject) => {
+      this.data.paths = data_object;
+      resolve(0)
+    })
+  }
+
   get_active_genes(dataset, gene_name_col = 'Hugo_Symbol') {
     var active_subset = dataset
       .filter(row => this.genes.active.has(row[gene_name_col]) || this.genes.panel.includes(row[gene_name_col]))
@@ -255,12 +402,10 @@ class Diagram {
     return(active_subset)
   }
 
-  add_expression_foldchange_layer(expression_foldchange_data_path, clipping_value = 3) {
+  add_expression_foldchange_layer(clipping_value = 3) {
     return new Promise((resolve, reject) => {
-      d3.tsv(expression_foldchange_data_path, (expression_foldchange_data) => {
-        this.data.expression.foldchange = expression_foldchange_data;
-
-        update_expression_foldchange_layer(this)
+      d3.tsv(this.data.paths.expression_foldchange, (expression_foldchange_data) => {
+        this.data.expression_foldchange = expression_foldchange_data;
         draw_expression_slider(this)
         this.data_layers.push('expression_foldchange')
         resolve(0)
@@ -268,20 +413,19 @@ class Diagram {
     })
   }
 
-  add_mutation_layer(mutation_data_path) {
+  add_mutation_layer() {
     return new Promise((resolve, reject) => {
-      d3.tsv(mutation_data_path, (mutation_data) => {
+      d3.tsv(this.data.paths.mutation, (mutation_data) => {
         this.data.mutation = mutation_data
-        update_mutation_layer(this)
-        this.data_layers.push('mutations')
+        this.data_layers.push('mutation')
         resolve(0)
       })
     })
   }
 
-  add_copynumber_layer(copynumber_data_path) {
+  add_copynumber_layer() {
     return new Promise((resolve, reject) => {
-      d3.tsv(copynumber_data_path, (copynumber_data) => {
+      d3.tsv(this.data.paths.copynumber, (copynumber_data) => {
         this.data.copynumber = copynumber_data.filter(row => ! (row.cna_value == 0))
         this.data.max_copynumber = copynumber_data.map(row => row.cna_value).reduce((a,b) => {
           if (a == null) {
@@ -292,7 +436,6 @@ class Diagram {
             return Math.max(a,b)
           }
         })
-        this.update_copynumber_layer()
         this.data_layers.push('copynumber')
         resolve(0)
       })
@@ -519,8 +662,46 @@ function move_gene(gene_group_element, coord, offset_x = 0, offset_y = 0) {
     .attr('transform', `translate(${coord[0] + offset_x},${coord[1] + offset_y})`)
 }
 
+function draw_fusion(diagram, coord) {
+  var fusion_group = diagram.svg.select('#gene_layer').insert('g', ':first-child')
+    .attr('transform', `translate(${coord[0] - gene_group_radius},${coord[1] - gene_group_radius})`)
+    .attr('id', get_unique_id(diagram, 'fusion_group', 'fusion'))
+    .attr('class', 'fusion_group')
+
+  var x0 = gene_group_radius - 2, y0 = gene_group_radius - fusion_symbol_height/2,
+      x1 = x0 - fusion_symbol_height/2, y1 = y0 + fusion_symbol_height/2,
+      x2 = x0, y2 = (y0 + y1) / 2, y2 = y1 + fusion_symbol_height/2,
+      x3 = x0 + fusion_symbol_height/2, y3 = y1;
+
+  fusion_group.append('path')
+    .attr('d', `M ${x0} ${y0} L ${x1} ${y1} L ${x2} ${y2} L ${x3} ${y3} Z`)
+    .style('fill', 'black')
+
+  drag_handler = get_gene_drag_handler(diagram)
+  drag_handler(fusion_group)
+}
+
+function draw_complex(diagram, coord) {
+  var complex_group = diagram.svg.select('#gene_layer').insert('g', ':first-child')
+    .attr('transform', `translate(${coord[0] - gene_group_radius},${coord[1] - gene_group_radius})`)
+    .attr('id', get_unique_id(diagram, 'complex_group', 'complex'))
+    .attr('class', 'complex_group')
+
+  complex_group.append('rect')
+    .attr('x', gene_group_radius - 6)
+    .attr('y', gene_group_radius - 6)
+    .attr('height', 12)
+    .attr('width', 12)
+    .style('fill', 'white')
+    .style('stroke-width', 2)
+    .style('stroke', 'black')
+
+  drag_handler = get_gene_drag_handler(diagram)
+  drag_handler(complex_group)
+}
+
 function draw_gene(diagram, svg, gene_name, coord, element_class, inactive = false) {
-  gene_group = svg.append('g')
+  gene_group = diagram.svg.select('#gene_layer').append('g')
     .attr('transform', `translate(${coord[0] - gene_group_radius},${coord[1] - gene_group_radius})`)
 		.attr('effective_radius', gene_radius)
 		.attr('class', element_class)
@@ -547,6 +728,7 @@ function draw_gene(diagram, svg, gene_name, coord, element_class, inactive = fal
 			.style('opacity', '0.3')
 			.attr('id', gene_name + '-inactive')
 	} else {
+    console.log('applying drag handler to ' + gene_name)
 		gene_group
 			.attr('id', gene_name)
 		drag_handler = get_gene_drag_handler(diagram)
@@ -628,14 +810,14 @@ function sketch_edge(diagram, origin_object) {
     .attr('d', d_text)
 }
 
-function get_unique_edge_id(diagram) {
-  existing_edge = diagram.svg.select('.edge')
-  if (existing_edge.empty()) {
-    return('edge_0')
+function get_unique_id(diagram, class_name, id_prefix = class_name) {
+  existing = diagram.svg.select(`.${class_name}`)
+  if (existing.empty()) {
+    return(`${id_prefix}_0`)
   } else {
-    var latest_edge_id = diagram.svg.select('.edge').attr('id');
-    var numeric_value = parseInt(latest_edge_id.split('_')[1]) + 1;
-    var new_edge_id = 'edge_' + String(numeric_value);
+    var latest_id = diagram.svg.select(`.${class_name}`).attr('id');
+    var numeric_value = parseInt(latest_id.split('_')[1]) + 1;
+    var new_edge_id = `${id_prefix}_` + String(numeric_value);
     return(new_edge_id)
   }
 }
@@ -710,6 +892,7 @@ function deselect_edge(diagram) {
 
 function delete_edge(diagram) {
   diagram.current_selection.selected_object.remove()
+	d3.select('#context_menu').remove()
 }
 
 function shorten_edge(diagram, edge_obj, shorten_by) {
@@ -748,25 +931,39 @@ function delete_selected_object(diagram) {
 }
 
 function make_gene_active(diagram, gene_name) {
+  console.log(gene_name)
 	diagram.genes.active.add(gene_name);
-
 	var gene_group = d3.select(`#${gene_name}`);
-	gene_group.attr('class', 'gene_group_active');
-	var bbox = gene_group.select('.gene_text').node().getBBox();
-	console.log(bbox.x)
-	var gene_text_backing = gene_group.insert('rect', ':first-child')
-		.attr('class', 'gene_title_backing')
-		.attr('x', bbox.x)
-		.attr('y', bbox.y)
-		.attr('height', bbox.height)
-		.attr('width', bbox.width)
-		.style('fill', 'white')
+
+  if (gene_group.attr('class') == 'fusion_group') {
+    draw_fusion(diagram, [active_width + gene_panel_left_padding, 140])
+    gene_group.attr('class', 'fusion_group_active');
+  } else if (gene_group.attr('class') == 'complex_group') {
+    draw_complex(diagram, [active_width + gene_panel_left_padding + gene_panel_spacing, 140])
+    gene_group.attr('class', 'complex_group_active');
+  } else {
+    gene_group.attr('class', 'gene_group_active');
+    var bbox = gene_group.select('.gene_text').node().getBBox();
+    var gene_text_backing = gene_group.insert('rect', ':first-child')
+      .attr('class', 'gene_title_backing')
+      .attr('x', bbox.x)
+      .attr('y', bbox.y)
+      .attr('height', bbox.height)
+      .attr('width', bbox.width)
+      .style('fill', 'white')
+  }
 }
 
 function put_gene_on_panel(diagram, gene_name) {
-  if (diagram.genes.active.has(gene_name)) {
-    diagram.genes.active.delete(gene_name);
-		diagram.svg.select(`#${gene_name}`).remove();
+	var gene_group = d3.select(`#${gene_name}`);
+
+  if (gene_group.attr('class') == 'fusion_group') {
+      diagram.svg.select(`#${gene_name}`).remove();
+  } else {
+    if (diagram.genes.active.has(gene_name)) {
+      diagram.genes.active.delete(gene_name);
+      diagram.svg.select(`#${gene_name}`).remove();
+    }
   }
 }
 
@@ -783,9 +980,9 @@ function get_gene_drag_handler(diagram) {
       if (diagram.mode == 'edge_mode' && this.start_position[0] < active_width) {
         active_edge = diagram.svg.select('.active_edge')
         if (active_edge.empty()) {
-        active_edge = diagram.view_layers.edge_layer
+        active_edge = d3.select('#edge_layer')
           .insert('path', ':first-child')
-          .attr('id', get_unique_edge_id(diagram))
+          .attr('id', get_unique_id(diagram, 'edge'))
           .attr('class', 'active_edge')
           .style('fill', 'none')
           .style('stroke', 'black')
@@ -803,21 +1000,7 @@ function get_gene_drag_handler(diagram) {
         edge_id = `#${active_edge.attr('id')}`
         active_edge
           .attr('class', 'edge')
-        diagram.svg.selectAll('.edge')
-          .on('mouseover', function() {
-            d3.select(this).style('stroke-width', hover_edge_width)
-          })
-          .on('mouseout', function() {
-            if (diagram.is_selected(d3.select(this))) {
-              d3.select(this).style('stroke-width', selected_edge_width)
-            } else {
-              d3.select(this).style('stroke-width', edge_width)
-            }
-          })
-          .on('click', function() {
-            select_edge(diagram, d3.select(this))
-						launch_context_menu(diagram, d3.mouse(this))
-          })
+        apply_edge_events(diagram) 
       } else {
 				// Not edge mode - is moving gene instead
 				var now_active = d3.event.x < active_width;
@@ -849,6 +1032,23 @@ function get_gene_drag_handler(diagram) {
   return(drag_handler)
 }
 
+function apply_edge_events(diagram) {
+  diagram.svg.selectAll('.edge')
+    .on('mouseover', function() {
+      d3.select(this).style('stroke-width', hover_edge_width)
+    })
+    .on('mouseout', function() {
+      if (diagram.is_selected(d3.select(this))) {
+        d3.select(this).style('stroke-width', selected_edge_width)
+      } else {
+        d3.select(this).style('stroke-width', edge_width)
+      }
+    })
+    .on('click', function() {
+      select_edge(diagram, d3.select(this))
+      launch_context_menu(diagram, d3.mouse(this))
+    })
+}
 
 function get_foldchange_color_scale(domain) {
   fc_color = d3.scaleLinear().domain(domain)
@@ -908,7 +1108,7 @@ function modify_gene_fill(gene, color) {
 }
 
 function update_expression_foldchange_layer(diagram) {
-  var expression_subset = diagram.get_active_genes(diagram.data.expression.foldchange, gene_name_col = 'Description')
+  var expression_subset = diagram.get_active_genes(diagram.data.expression_foldchange, gene_name_col = 'Description')
 
   clipping_value = diagram.options.expression_clipping_value
   color_scale = get_foldchange_color_scale([-clipping_value, 0, clipping_value])
@@ -940,6 +1140,15 @@ function refresh_gene_panel(diagram) {
   update_expression_foldchange_layer(diagram)
   update_mutation_layer(diagram)
   diagram.update_copynumber_layer()
+}
+
+function redraw_active_genes(diagram) {
+  for (g of diagram.genes.active) {
+    var gene_group = d3.select(`#${g}`)
+    var position = get_gene_position(gene_group)
+    gene_group.remove()
+    draw_gene(diagram, diagram.svg, g, position, 'gene_group_active')
+  }
 }
 
 function draw_expression_slider(diagram) {
@@ -1019,4 +1228,24 @@ function main() {
     }
     diagram.feature.search_timeout = setTimeout(() => { diagram.run_search() }, search_delay_ms);
   })
+
+  d3.select('#download_button').on('click', function() {
+    diagram.export_svg()
+  })
+
+  d3.select('#save_button').on('click', function() {
+    diagram.save_svg()
+  })
+
+  d3.select('#file_loader').on('change', function() {
+    console.log(this)
+    var file = document.querySelector('#file_loader').files[0];
+    var reader = new FileReader();
+    reader.onload = function(event) {
+      var contents = event.target.result;
+      diagram.load_pathway(contents)
+    };
+    reader.readAsText(file)
+  })
 }
+

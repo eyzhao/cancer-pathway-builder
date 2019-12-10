@@ -6,6 +6,7 @@
     <script src='js/js-yaml/dist/js-yaml.min.js'></script>
     <script src="js/jquery/jquery-3.3.1.min.js"></script>
     <script src='js/d3/d3.min.js'></script>
+    <script src='js/custom/FileSaver.min.js'></script>
     <script src='pathway_builder.js'></script>
     <link href='https://fonts.googleapis.com/css?family=Lato:300,400,700' rel='stylesheet' type='text/css'>
     <script src="js/custom/d3-simple-slider.min.js"></script>
@@ -23,14 +24,26 @@
       <div id='workspace'>    
       </div>
       <div id='sliders'>
+        <h2>File</h2>
+        <p>
+          <button id='download_button'>Download</button>&nbsp;
+          <button id='save_button'>Save</button>
+        </p>
+        <p>
+          <input id='file_loader' type='file' accept="application/json"></input>
+        </p>
         <h2>Genes/Pathways</h2>
         <strong>Search: </strong>
         <input id='search'></input>
-        <h2>Expression Clipping</h2>
+        <h2>Sliders</h2>
+        <h3>Expression Clipping</h3>
         <div class="row align-items-center">
           <div class="col-sm-2"><p id="expression-slider-value"></p></div>
           <div class="col-sm"><div id="expression-slider"></div></div>
         </div>
+      </div>
+      <div id='hidden' style='display: hidden'>
+        
       </div>
     </div>
   </body>
